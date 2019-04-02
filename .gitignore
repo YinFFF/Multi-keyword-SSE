@@ -1,0 +1,5 @@
+*.txt
+algo_hmac.cpp
+algo_hmac.h
+test.cpp
+PMCQueryScheme
