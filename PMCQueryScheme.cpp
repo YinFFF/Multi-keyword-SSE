@@ -1,9 +1,9 @@
 #include <stdio.h>
 #include <iostream>
 #include <string.h>
+#include <math.h>
 //#include <string>
 //#include <algorithm>
-#include <map>            // std::map
 #include <vector>         // std::vector 
 #include <sys/time.h>     // gettimeofday
 #include <stack>          // std::stack
@@ -173,27 +173,28 @@ int BuildEncTag(Param &param, int dictionary_size, element_t (*enc_taglist)[2])
 /*
     1. 遍历 file_vector_list 中所有 file vector string
     2. for each file vector string, insert to pathids 
+        - 将 file vector 转换为 permuted file vector (由于暂时没有置换, 所以忽略)
         - key 值设置为 file vector, value 值设置为 file 序号.
         - 确定 file vector 对应的位置是否已经有值了, 如果有了则取出来级联后再插入
+        - 将 pathids 中所有空的 element 补齐 0.
     3. 再遍历一遍 file_vector_list, 把所有 key 对应的 value 进行 AES 加密 (可以暂时不做)    
 */
-int BuildPathids(const Param &param, const vector<string> &file_vector_list, map<string, string> &pathids)
+int BuildPathids(const Param &param, const vector<string> &file_vector_list, string *pathids, long long pathids_len)
 {
-    map<string, string>::iterator it;
     long long file_id = 1;
     string temp_id;
-    for(int i =0; i < file_vector_list.size(); i++){
-        it = pathids.find(file_vector_list[i]);
-        if(it != pathids.end()){
-            temp_id = it->second + "," + to_string(file_id);
-            pathids.erase(it);
-            pathids[file_vector_list[i]] = temp_id;
-        }
-        else
-            pathids[file_vector_list[i]] = to_string(file_id);
+    for(int i = 0; i < file_vector_list.size(); i++){
+        if(pathids[stoi(file_vector_list[i], NULL, 2)].empty())
+            pathids[stoi(file_vector_list[i], NULL, 2)] = to_string(file_id);
+        else    
+            pathids[stoi(file_vector_list[i], NULL, 2)] += "," + to_string(file_id);
         file_id++;
     }
-    
+
+    // Todo: 补零 
+    // Todo: 加密 pathids
+
+   
 //    it = pathids.find("01010");
 //    if(it != pathids.end())
 //        cout << it->second << endl;
@@ -311,6 +312,7 @@ int Query(Param &param, const int &dictionary_size, const int &wildcard_size, in
 
 #define KeywordsetSize 9
 #define Wildcardnumber 0
+#define Number 1024
 
 
 
@@ -320,7 +322,7 @@ int main(int argc, char **argv)
 //    int wildcard_size;
     Param param(argc, argv);
     element_t enc_taglist[KeywordsetSize][2];
-    map<string, string> pathids;
+    string pathids[Number];
     vector<string> file_vector_list, path_set;
     element_t enc_query_vector[KeywordsetSize];
     int wildcard_offset[KeywordsetSize] = {0};
@@ -343,7 +345,7 @@ int main(int argc, char **argv)
         // build encrypted tag
         BuildEncTag(param, KeywordsetSize, enc_taglist);
         // build path-ids
-        BuildPathids(param, file_vector_list, pathids);    
+        BuildPathids(param, file_vector_list, pathids, pow(2,KeywordsetSize));    
         gettimeofday(&time2,NULL);
         printf("%f \n", (time2.tv_sec-time1.tv_sec)+((double)(time2.tv_usec-time1.tv_usec))/1000000);
 
@@ -361,7 +363,7 @@ int main(int argc, char **argv)
 //        file_vector_list.shrink_to_fit();
         vector<string>().swap(file_vector_list);
         vector<string>().swap(path_set);
-        map<string, string>().swap(pathids);
+//        map<string, string>().swap(pathids);
     }
 }
 
