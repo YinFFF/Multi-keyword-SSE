@@ -182,6 +182,8 @@ int BuildPathids(const Param &param, const vector<string> &file_vector_list, map
     map<string, string>::iterator it;
     long long file_id = 1;
     string temp_id;
+
+    // store all the file_vectors in file_vector_list to pathids
     for(int i =0; i < file_vector_list.size(); i++){
         it = pathids.find(file_vector_list[i]);
         if(it != pathids.end()){
@@ -194,11 +196,6 @@ int BuildPathids(const Param &param, const vector<string> &file_vector_list, map
         file_id++;
     }
     
-//    it = pathids.find("01010");
-//    if(it != pathids.end())
-//        cout << it->second << endl;
-//    else
-//        cout << "no found \n ";
     return 0;
 }
 
@@ -209,28 +206,34 @@ int BuildPathids(const Param &param, const vector<string> &file_vector_list, map
     4. g^{H()+pr}
     5. 放入 enc_vector 中
 */
-int GenQueryVector(Param &param, const int &dictionary_size, const int &wildcard_size, int *wildcard_offset, element_t *enc_query_vector)
+int GenQueryVector(Param &param, 
+                       const int &dictionary_size, 
+                       const int &wildcard_size, 
+                       vector<int> &wildcard_offset, 
+                       element_t *enc_query_vector)
 {
     string query_vector;
     element_t exp_value, r;
+
+    // 随机生成 query_vector
     GenRandomVector(dictionary_size, query_vector);
-    // 在 dictionary_size 中随机选取 wildcard_size 个位置, 作为 wildcard keyword
+    
+    // 随机选取 wildcard_size 个位置当作 wildcard keyword, 将位置存储在 wildcard_offset 中.
     int select = wildcard_size, remaining = dictionary_size;
     for (int i = 0; i < dictionary_size; i++){
         if((rand() % remaining) < select){
-            wildcard_offset[i] = 1;
+            wildcard_offset.push_back(i);
             select--;
         }
         remaining--;
     }
-    
+
+    // 将 query_vector 的内容加密后存储到 enc_query_vector 中
     element_init_Zr(exp_value, param.pairing);
     element_init_Zr(r, param.pairing);
     element_random(r);
     for(int i = 0; i < query_vector.size(); i++){
-        if(wildcard_offset[i])
-            continue;
-        else if(query_vector[i] == '0'){
+        if(query_vector[i] == '0'){
             CalExponent(i, "0", exp_value); // exp_value = H('0'||i)
         }else{
             CalExponent(i, "1", exp_value); // exp_value = H('0'||i)
@@ -241,6 +244,7 @@ int GenQueryVector(Param &param, const int &dictionary_size, const int &wildcard
     }
     element_clear(exp_value);
     element_clear(r);
+    
     return 0;
 }
 
@@ -252,26 +256,33 @@ int GenQueryVector(Param &param, const int &dictionary_size, const int &wildcard
         2. 再找其他 path vector
 
 */
-int Query(Param &param, const int &dictionary_size, const int &wildcard_size, int *wildcard_offset, element_t *enc_query_vector, element_t (*enc_taglist)[2], vector<string> &path_set){
-    string path_vector;
+int Query(Param &param, 
+            const int &dictionary_size,
+            vector<int> &wildcard_offset, 
+            element_t *enc_query_vector, 
+            element_t (*enc_taglist)[2], 
+            vector<string> &path_set)
+{
     vector<string> copy_path_set;
     element_t enc_tag;
     element_init_GT(enc_tag, param.pairing);
+    
     // 遍历 enc_taglist, 确认满足 query 的第一个 path vector
-    for(int i = 0; i < dictionary_size; i++){
-        if(wildcard_offset[i] == 1){
-            path_vector = path_vector + '0';
-        }else{
+    int next_wildcardkeyword_location = wildcard_offset.pop();
+    string path_vector(dictionary_size, '0');
+    for(int i = 0, int j = 0; i < dictionary_size; i++){
+        if(j < wildcard_offset.size() && wildcard_offset[j] == 1)
+            j++;
+        else{
             element_pairing(enc_tag, enc_query_vector[i], param.h); // enc_tag = e(g^{H()+pr),h)
             if(element_cmp(enc_taglist[i][0], enc_tag) != 0) 
-                path_vector = path_vector + '1';
+                path_vector[i] = '1';
             else
-                path_vector = path_vector + '0';
+                path_vector[i] = '0';
         }
     }
-//    path_set.push_back(path_vector);
 
-    // 找到所有的 path vector, 通过path_set的方式太消耗空间了
+    // 找到所有的 path vectors, 存储在 path_set 中, 再统一打印出来 (path_set 可能会很大)
 //    for(int i = 0; i < dictionary_size; i++)
 //        if(wildcard_offset[i] == 1){            
 //            copy_path_set = path_set;
@@ -279,28 +290,25 @@ int Query(Param &param, const int &dictionary_size, const int &wildcard_size, in
 //                copy_path_set[j][i] = '1';
 //            path_set.insert(path_set.end(), copy_path_set.begin(), copy_path_set.end());
 //        }       
-    
+//    
 //    cout << "query : " << path_vector << endl;
 //    cout << path_vector << endl;
-    vector<int> path_increment_location, path_increment_value(wildcard_size, 0);
-    for(int i = 0; i < dictionary_size; i++){
-        if(wildcard_offset[i] == 1)
-            path_increment_location.push_back(i);
-    };
+
+    // 找到一个 path vector 后, 打印出来后但不存储    
     while(true){
         int i;
-        for(i = 0; i < wildcard_size; i++){
-            path_increment_value[i]++;
-            if(path_increment_value[i] == 1)
+        // 通过在上一个path_vector的wildcard位置上+1来找到下一个path_vector(需要考虑进位)
+        for(i = 0; i < wildcard_offset(); i++){
+            if(path_vector[wildcard_offset[j]] == 0){
+                path_vector[wildcard_offset[j]]++;
                 break;
-            else
-                path_increment_value[i] = 0;
+            }else{
+                path_vector[wildcard_offset[j]] = 0;
+            }
         }
-        if(i == wildcard_size)
+        // 如果上一个path_vector的所有wildcard位置的值都是1, 则已经遍历了所有的path_vector了
+        if(i == wildcard_offset())
             break;
-        else
-            for(int j = 0; j <= i; j++)
-                path_vector[path_increment_location[j]] = '0' + path_increment_value[j];
 //        cout << path_vector << endl;    
     }
 
@@ -309,56 +317,64 @@ int Query(Param &param, const int &dictionary_size, const int &wildcard_size, in
 }
 
 
-#define KeywordsetSize 9
-#define Wildcardnumber 0
+#define dictionary_size 10
+//#define Wildcardnumber 0
 
 
 
 int main(int argc, char **argv)
 {
     struct timeval time1,time2;
-//    int wildcard_size;
     Param param(argc, argv);
-    element_t enc_taglist[KeywordsetSize][2];
-    map<string, string> pathids;
-    vector<string> file_vector_list, path_set;
-    element_t enc_query_vector[KeywordsetSize];
-    int wildcard_offset[KeywordsetSize] = {0};
-//    scanf("%d", &wildcard_size);
-    for(int i = 0; i < KeywordsetSize; i++)
+    element_t enc_taglist[dictionary_size][2];   // to store encrypted tag array
+    map<string, string> pathids;                 // to store encrypted path-ids array
+    vector<string> file_vector_list;             // to store all the file vector in file collection
+    vector<string> path_set;                     // to store all the queried path ids
+    element_t enc_query_vector[dictionary_size]; // encrypted query vector
+    vector<int> wildcard_offset;                 // to identify the locations of wildcard keywords in query vector
+
+   
+    for(int i = 0; i < dictionary_size; i++)
         for(int j = 0; j < 2; j++)
             element_init_GT(enc_taglist[i][j], param.pairing);
-    for(int i = 0; i < KeywordsetSize; i++)  
+    
+    for(int i = 0; i < dictionary_size; i++)  
         element_init_G1(enc_query_vector[i], param.pairing);
 
-    for(int i = 1;i <= 10; i++){
-//        cout << i << " ";
+    for(int i = 0;i <= 10; i++){
+        cout << i << " ";
+        
         // file vector generation
-        GenFilevector(10000*i, KeywordsetSize,  file_vector_list);
+        GenFilevector(10000*6, dictionary_size,  file_vector_list);
      
         // system initial
         ParaInit(param);
 
-        gettimeofday(&time1,NULL); 
-        // build encrypted tag
-        BuildEncTag(param, KeywordsetSize, enc_taglist);
-        // build path-ids
-        BuildPathids(param, file_vector_list, pathids);    
-        gettimeofday(&time2,NULL);
-        printf("%f \n", (time2.tv_sec-time1.tv_sec)+((double)(time2.tv_usec-time1.tv_usec))/1000000);
-
 //        gettimeofday(&time1,NULL); 
+
+        // build encrypted tag
+        BuildEncTag(param, dictionary_size, enc_taglist);
+
+        // build path-ids
+        BuildPathids(param, file_vector_list, pathids);  
+        
+//        gettimeofday(&time2,NULL);
+//        printf("%f \n", (time2.tv_sec-time1.tv_sec)+((double)(time2.tv_usec-time1.tv_usec))/1000000);
+
+        gettimeofday(&time1,NULL); 
+
         // Genquery
-        GenQueryVector(param, KeywordsetSize, Wildcardnumber, wildcard_offset, enc_query_vector);
+        GenQueryVector(param, dictionary_size, i, wildcard_offset, enc_query_vector);
+        
         // query
-        Query(param,  KeywordsetSize, Wildcardnumber, wildcard_offset, enc_query_vector, enc_taglist, path_set);
+        Query(param,  dictionary_size, wildcard_offset, enc_query_vector, enc_taglist, path_set);
+        
     //    for(int j = 0; j < path_set.size(); j++)
     //        cout << path_set[j] << ":" << pathids[path_set[j]] << endl;       
-//        gettimeofday(&time2,NULL); 
-//        printf("query time = %f (s)\n", (time2.tv_sec-time1.tv_sec)+((double)(time2.tv_usec-time1.tv_usec))/1000000);
-       
-//        file_vector_list.clear();
-//        file_vector_list.shrink_to_fit();
+        gettimeofday(&time2,NULL); 
+    
+        printf("%f\n", (time2.tv_sec-time1.tv_sec)+((double)(time2.tv_usec-time1.tv_usec))/1000000);
+
         vector<string>().swap(file_vector_list);
         vector<string>().swap(path_set);
         map<string, string>().swap(pathids);

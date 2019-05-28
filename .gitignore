@@ -3,3 +3,4 @@ algo_hmac.cpp
 algo_hmac.h
 test.cpp
 PMCQueryScheme
+AES_test.cpp
