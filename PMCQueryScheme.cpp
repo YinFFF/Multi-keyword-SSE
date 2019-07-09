@@ -10,8 +10,10 @@
 #include <pbc_test.h>
 #include <openssl/hmac.h>
 #include <openssl/aes.h>
+#include <openssl/rand.h>
 
 #define CAL_REPEAT  5
+#define PATHIDS_MAXMUM_LEN 1000
 
 using namespace std;
 
@@ -209,28 +211,40 @@ int BuildPathids(const Param &param,
 // Functionality: Insert all the elements in file_vector_list to pathids, add dummy, and encrypt the pathids.
 int BuildPathids(const Param &param,
                  const vector<string> &file_vector_list,
-                 long pathids_size,
-                 string *pathids)
+                 const long pathids_size,
+                 char (*pathids)[PATHIDS_MAXMUM_LEN])
 {
-    map<string, string>::iterator it;
-    long long file_id = 1;
-    string temp_id;
-
-    // store all the vectors in file_vector_list to pathids
-    for(int i =0; i < file_vector_list.size(); i++)
-    {
-        if(pathids[stoi(file_vector_list[i], NULL, 2)].empty())
-            pathids[stoi(file_vector_list[i], NULL, 2)] = to_string(file_id);
-        else
-            pathids[stoi(file_vector_list[i], NULL, 2)] += ("," + to_string(file_id));
-        file_id++;
-    }
+    unsigned short file_id = 1;
+    char iv[AES_BLOCK_SIZE];
+    int pathids_offset[pathids_size]; // offsets for each element in pathids
 
     // Add dummy to the pathids. By default, we add 1000 bytes of dummy for each id-set.
     for(int i = 0; i < pathids_size; i++)
+        memset(pathids[i], '#', PATHIDS_MAXMUM_LEN);
+
+    // generate and store iv for each element
+    for(int i = 0; i < pathids_size; i++)
     {
-        pathids[i].resize(1000, '#');
+        RAND_bytes((unsigned char*)iv, AES_BLOCK_SIZE);
+        memcpy(pathids[i], iv, AES_BLOCK_SIZE);
+        pathids_offset[i] = AES_BLOCK_SIZE;
     }
+    
+    // store all the elements in file_vector_list to pathids
+    long order;
+    for(int i =0; i < file_vector_list.size(); i++)
+    {
+        order = stoi(file_vector_list[i], NULL, 2);
+        memcpy(pathids[order] + pathids_offset[order], file_id, sizeof(file_id));
+        pathids_offset[order] += sizeof(file_id);
+        file_id++;
+    }
+
+//    for(int i = 0 ; i < pathids_size; i++)
+//    {
+//        cout << pathids[i].substr(AES_BLOCK_SIZE) << endl;
+//    }
+    
     return 0;
 }
 
@@ -361,14 +375,14 @@ int Search(Param &param,
 // Test for oursourcing files
 void OutsourceFileTest()
 {
-    int DICTIONARY_SIZE = 20;
+    int DICTIONARY_SIZE = 10;
     const long pathids_size = pow(2, DICTIONARY_SIZE);
     int wildcard_size = 0;
     int files_size = 0;
     int divide_num = 1;
     struct timeval time1,time2;
     element_t enc_taglist[DICTIONARY_SIZE][2];   // to store encrypted tags
-    string pathids[pathids_size];                // to store encrypted id-sets
+    char pathids[pathids_size][PATHIDS_MAXMUM_LEN]; // to store encrypted id-sets
     vector<string> file_vector_list;             // to store all the file vector in file collection
     element_t enc_query_vector[DICTIONARY_SIZE]; // encrypted query vector
     vector<int> wildcard_offset;                 // to identify the locations of wildcard keywords in query vector
@@ -385,7 +399,7 @@ void OutsourceFileTest()
     for(int i = 0; i < DICTIONARY_SIZE; i++)
         element_init_G1(enc_query_vector[i], param.pairing);
 
-    for(files_size = 1; files_size <= 6; files_size++)
+    for(files_size = 1; files_size <= 1; files_size++)
     {
         // file vector generation
         GenFilevector(files_size * 10000 / divide_num, DICTIONARY_SIZE, file_vector_list);
@@ -405,8 +419,8 @@ void OutsourceFileTest()
 
             evaluate_time += (time2.tv_sec-time1.tv_sec)+((double)(time2.tv_usec-time1.tv_usec))/1000000;
 
-            for(int z = 0; z < pathids_size; z++)
-                pathids[z].clear();
+//            for(int z = 0; z < pathids_size; z++)
+//                pathids[z].clear();
         }
         printf("%f\n", divide_num * evaluate_time / CAL_REPEAT);
         evaluate_time = 0;
@@ -546,7 +560,7 @@ void QueryTest2()
 
 int main(int argc, char * argv[])
 {
-//    OutsourceFileTest();
-    QueryTest2();
+    OutsourceFileTest();
+//    QueryTest2();
     return 0;
 }
