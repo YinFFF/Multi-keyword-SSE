@@ -89,8 +89,7 @@ int Hash(const char * algo, const char * input, unsigned int input_length, unsig
 {
     EVP_MD_CTX *ctx = EVP_MD_CTX_new();
     const EVP_MD * md = EVP_get_digestbyname(algo);
-    if(!md)
-    {
+    if(!md) {
         printf("Unknown message digest algorithm: %s\n", algo);
         return -1;
     }
@@ -126,8 +125,7 @@ int CalExponent(const long long level, const string &info, element_t &hash_exp)
 int GenRandomVector(const int &len, string &binary_array)
 {
     binary_array.resize(len);
-    for (int i = 0; i < len; i++)
-    {
+    for (int i = 0; i < len; i++) {
         if(rand()%2 == 0)
             binary_array[i] = '0';
         else
@@ -141,8 +139,7 @@ int GenFilevector(int file_number, int dictionary_size, vector<string> &file_vec
     string binary_array;
     srand (time(NULL));
 
-    for (int i = 0; i < file_number; i++)
-    {
+    for (int i = 0; i < file_number; i++) {
         GenRandomVector(dictionary_size, binary_array);
         (file_vector_list).push_back(binary_array);
     }
@@ -156,8 +153,7 @@ int GenFilevector(int file_number, int dictionary_size, vector<string> &file_vec
 */
 int BuildEncTag(Param &param, int dictionary_size, element_t (*enc_taglist)[2])
 {
-    for(int i = 0; i < dictionary_size; i++)
-    {
+    for(int i = 0; i < dictionary_size; i++) {
         element_t hash_output;
         element_init_Zr(hash_output, param.pairing);
         // left
@@ -191,16 +187,13 @@ int BuildPathids(const Param &param,
     string temp_id;
 
     // store all the vectors in file_vector_list to pathids
-    for(int i =0; i < file_vector_list.size(); i++)
-    {
+    for(int i =0; i < file_vector_list.size(); i++) {
         it = pathids.find(file_vector_list[i]);
-        if(it != pathids.end())
-        {
+        if(it != pathids.end()) {
             temp_id = it->second + "," + to_string(file_id);
             pathids.erase(it);
             pathids[file_vector_list[i]] = temp_id;
-        }
-        else
+        } else
             pathids[file_vector_list[i]] = to_string(file_id);
         file_id++;
     }
@@ -223,28 +216,27 @@ int BuildPathids(const Param &param,
         memset(pathids[i], '#', PATHIDS_MAXMUM_LEN);
 
     // generate and store iv for each element
-    for(int i = 0; i < pathids_size; i++)
-    {
+    for(int i = 0; i < pathids_size; i++) {
         RAND_bytes((unsigned char*)iv, AES_BLOCK_SIZE);
         memcpy(pathids[i], iv, AES_BLOCK_SIZE);
         pathids_offset[i] = AES_BLOCK_SIZE;
     }
-    
+
     // store all the elements in file_vector_list to pathids
     long order;
-    for(int i =0; i < file_vector_list.size(); i++)
-    {
+    for(int i =0; i < file_vector_list.size(); i++) {
         order = stoi(file_vector_list[i], NULL, 2);
         memcpy(pathids[order] + pathids_offset[order], file_id, sizeof(file_id));
         pathids_offset[order] += sizeof(file_id);
         file_id++;
     }
 
-//    for(int i = 0 ; i < pathids_size; i++)
-//    {
-//        cout << pathids[i].substr(AES_BLOCK_SIZE) << endl;
-//    }
-    
+    for(int i = 0 ; i < pathids_size; i++){
+        for(int j = AES_BLOCK_SIZE; j < pathids_offset[i]; j+= sizeof(file_id)){
+            printf("%hd", pathids[i] + j);
+        }
+    }
+
     return 0;
 }
 
@@ -268,10 +260,8 @@ int GenQueryVector(Param &param,
 
     // 随机选取 wildcard_size 个位置当作 wildcard keyword, 将位置存储在 wildcard_offset 中.
     int select = wildcard_size, remaining = dictionary_size;
-    for (int i = 0; i < dictionary_size; i++)
-    {
-        if((rand() % remaining) < select)
-        {
+    for (int i = 0; i < dictionary_size; i++) {
+        if((rand() % remaining) < select) {
             wildcard_offset.push_back(i);
             select--;
         }
@@ -282,14 +272,10 @@ int GenQueryVector(Param &param,
     element_init_Zr(exp_value, param.pairing);
     element_init_Zr(r, param.pairing);
     element_random(r);
-    for(int i = 0; i < query_vector.size(); i++)
-    {
-        if(query_vector[i] == '0')
-        {
+    for(int i = 0; i < query_vector.size(); i++) {
+        if(query_vector[i] == '0') {
             CalExponent(i, "0", exp_value); // exp_value = H('0'||i)
-        }
-        else
-        {
+        } else {
             CalExponent(i, "1", exp_value); // exp_value = H('0'||i)
         }
         element_mul(r, r, param.p); // r = pr
@@ -318,14 +304,10 @@ int Search(Param &param,
 
     // 遍历 enc_taglist, 确认满足 query 的第一个 path vector
     string path_vector(dictionary_size, '0');
-    for(int i = 0, j = 0; i < dictionary_size; i++)
-    {
-        if(j < wildcard_offset.size() && wildcard_offset[j] == i)
-        {
+    for(int i = 0, j = 0; i < dictionary_size; i++) {
+        if(j < wildcard_offset.size() && wildcard_offset[j] == i) {
             j++;
-        }
-        else
-        {
+        } else {
             element_pairing(enc_tag, enc_query_vector[i], param.h); // enc_tag = e(g^{H()+pr),h)
             if(element_cmp(enc_taglist[i][0], enc_tag) != 0)
                 path_vector[i] = '1';
@@ -334,31 +316,16 @@ int Search(Param &param,
         }
     }
 
-    // 找到所有的 path vectors, 存储在 path_set 中, 再统一打印出来 (path_set 可能会很大)
-//    for(int i = 0; i < dictionary_size; i++)
-//        if(wildcard_offset[i] == 1){
-//            copy_path_set = path_set;
-//            for (int j = 0; j < copy_path_set.size(); j++)
-//                copy_path_set[j][i] = '1';
-//            path_set.insert(path_set.end(), copy_path_set.begin(), copy_path_set.end());
-//        }
-//
-//    cout << "query : " << path_vector << endl;
 
-    // 通过在上一个path_vector位置来找下一个path_vector, 不需要存储所有已经找到的path_vector
-    while(true)
-    {
+    // 通过在上一个path_vector位置来计算下一个path_vector的值, 不需要存储所有已经找到的path_vector
+    while(true) {
         int i;
         // 通过在上一个path_vector的wildcard位置上+1来找到下一个path_vector(需要考虑进位)
-        for(i = 0; i < wildcard_offset.size(); i++)
-        {
-            if(path_vector[wildcard_offset[i]] == '0')
-            {
+        for(i = 0; i < wildcard_offset.size(); i++) {
+            if(path_vector[wildcard_offset[i]] == '0') {
                 path_vector[wildcard_offset[i]] = '1';
                 break;
-            }
-            else
-            {
+            } else {
                 path_vector[wildcard_offset[i]] = '0';
             }
         }
@@ -399,13 +366,11 @@ void OutsourceFileTest()
     for(int i = 0; i < DICTIONARY_SIZE; i++)
         element_init_G1(enc_query_vector[i], param.pairing);
 
-    for(files_size = 1; files_size <= 1; files_size++)
-    {
+    for(files_size = 1; files_size <= 1; files_size++) {
         // file vector generation
         GenFilevector(files_size * 10000 / divide_num, DICTIONARY_SIZE, file_vector_list);
 
-        for (int j = 0; j < CAL_REPEAT; j++)
-        {
+        for (int j = 0; j < CAL_REPEAT; j++) {
 
             gettimeofday(&time1,NULL);
 
@@ -457,8 +422,7 @@ void QueryTest1()
         element_init_G1(enc_query_vector[i], param.pairing);
 
 
-    for(files_size = 1; files_size <= 6; files_size++)
-    {
+    for(files_size = 1; files_size <= 6; files_size++) {
         cout << files_size * 10000 << " ";
 
         // file vector generation
@@ -470,8 +434,7 @@ void QueryTest1()
         // build path-ids
         BuildPathids(param, file_vector_list, pathids_size, pathids);
 
-        for (int j = 0; j < CAL_REPEAT; j++)
-        {
+        for (int j = 0; j < CAL_REPEAT; j++) {
             gettimeofday(&time1,NULL);
 
             // Generate encrypted query vector
@@ -520,8 +483,7 @@ void QueryTest2()
         element_init_G1(enc_query_vector[i], param.pairing);
 
 
-    for(wildcard_size = 0; wildcard_size <= DICTIONARY_SIZE; wildcard_size++)
-    {
+    for(wildcard_size = 0; wildcard_size <= DICTIONARY_SIZE; wildcard_size++) {
         cout << wildcard_size << " ";
         // file vector generation
         GenFilevector(files_size * 10000, DICTIONARY_SIZE, file_vector_list);
@@ -532,8 +494,7 @@ void QueryTest2()
         // build path-ids
         BuildPathids(param, file_vector_list, pathids_size, pathids);
 
-        for (int j = 0; j < CAL_REPEAT; j++)
-        {
+        for (int j = 0; j < CAL_REPEAT; j++) {
             gettimeofday(&time1,NULL);
 
             // Generate encrypted query vector
