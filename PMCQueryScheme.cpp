@@ -8,12 +8,16 @@
 #include <stack>          // std::stack
 #include <pbc.h>
 #include <pbc_test.h>
+
+#include "AES.h"
 #include <openssl/hmac.h>
 #include <openssl/aes.h>
 #include <openssl/rand.h>
 
-#define CAL_REPEAT  5
-#define PATHIDS_MAXMUM_LEN 1000
+
+
+#define CAL_REPEAT  10
+#define PATHIDS_MAXMUM_LEN 5000
 
 using namespace std;
 
@@ -31,9 +35,11 @@ public:
     element_t gt;
     element_t R0;
     element_t R1;
+    unsigned char aes_key[32];
 
     Param()
     {
+        RAND_bytes(aes_key, 32);
         pbc_param_t param_t;
         mpz_t p_t, q_t, N_t;
         mpz_init(p_t);
@@ -201,21 +207,22 @@ int BuildPathids(const Param &param,
     return 0;
 }
 
-// Functionality: Insert all the elements in file_vector_list to pathids, add dummy, and encrypt the pathids.
+// Functionality: 
+// Insert all the elements in file_vector_list to pathids, add dummy, and encrypt the pathids.
 int BuildPathids(const Param &param,
                  const vector<string> &file_vector_list,
                  const long pathids_size,
-                 char (*pathids)[PATHIDS_MAXMUM_LEN])
+                 unsigned char (*pathids)[PATHIDS_MAXMUM_LEN])
 {
     unsigned short file_id = 1;
+    int encrypted_len = 2 * sizeof(file_id) * file_vector_list.size() / pathids_size;
     char iv[AES_BLOCK_SIZE];
     int pathids_offset[pathids_size]; // offsets for each element in pathids
-
-    // Add dummy to the pathids. By default, we add 1000 bytes of dummy for each id-set.
+    // Add dummy to each element in pathids. By default, we add 1000 bytes of '#' for each id-set.
     for(int i = 0; i < pathids_size; i++)
-        memset(pathids[i], '#', PATHIDS_MAXMUM_LEN);
+        memset(pathids[i], '#', encrypted_len);
 
-    // generate and store iv for each element
+    // generate and store iv for each element in pathids
     for(int i = 0; i < pathids_size; i++) {
         RAND_bytes((unsigned char*)iv, AES_BLOCK_SIZE);
         memcpy(pathids[i], iv, AES_BLOCK_SIZE);
@@ -224,18 +231,38 @@ int BuildPathids(const Param &param,
 
     // store all the elements in file_vector_list to pathids
     long order;
-    for(int i =0; i < file_vector_list.size(); i++) {
+//    printf("file_vector_list.size: %d ", file_vector_list.size());
+    for(int i = 0; i < file_vector_list.size(); i++) {
+//        printf("%d ", file_id);
         order = stoi(file_vector_list[i], NULL, 2);
-        memcpy(pathids[order] + pathids_offset[order], file_id, sizeof(file_id));
+        memcpy(pathids[order] + pathids_offset[order], &file_id, sizeof(file_id));
         pathids_offset[order] += sizeof(file_id);
         file_id++;
     }
 
-    for(int i = 0 ; i < pathids_size; i++){
-        for(int j = AES_BLOCK_SIZE; j < pathids_offset[i]; j+= sizeof(file_id)){
-            printf("%hd", pathids[i] + j);
-        }
+    
+    /* Encrypt the plaintext */
+    int ciphertext_len;
+    for(int i = 0; i < pathids_size; i++){
+        ciphertext_len = AES_encrypt(pathids[i] + AES_BLOCK_SIZE, encrypted_len - 32, 
+                            (unsigned char *) param.aes_key, pathids[i], pathids[i] + AES_BLOCK_SIZE);
     }
+        
+//    /* Decrypt the ciphertext */
+//    int decryptedtext_len;
+//    for(int i = 0; i < pathids_size; i++){
+//        decryptedtext_len = AES_decrypt(pathids[i] + AES_BLOCK_SIZE, ciphertext_len, 
+//                            (unsigned char *) param.aes_key, pathids[i], pathids[i] + AES_BLOCK_SIZE);
+//    }
+//
+//    /* print ids */
+//    for(int i = 0 ; i < pathids_size; i++){
+//        printf("pathid[%d]: ", i);
+//        for(int j = AES_BLOCK_SIZE; j < pathids_offset[i]; j += sizeof(file_id)){
+//            printf("%hd ", *(unsigned short *)(pathids[i] + j));
+//        }
+//        printf("\n");
+//    }
 
     return 0;
 }
@@ -349,7 +376,7 @@ void OutsourceFileTest()
     int divide_num = 1;
     struct timeval time1,time2;
     element_t enc_taglist[DICTIONARY_SIZE][2];   // to store encrypted tags
-    char pathids[pathids_size][PATHIDS_MAXMUM_LEN]; // to store encrypted id-sets
+    unsigned char pathids[pathids_size][PATHIDS_MAXMUM_LEN]; // to store encrypted id-sets
     vector<string> file_vector_list;             // to store all the file vector in file collection
     element_t enc_query_vector[DICTIONARY_SIZE]; // encrypted query vector
     vector<int> wildcard_offset;                 // to identify the locations of wildcard keywords in query vector
@@ -366,20 +393,21 @@ void OutsourceFileTest()
     for(int i = 0; i < DICTIONARY_SIZE; i++)
         element_init_G1(enc_query_vector[i], param.pairing);
 
-    for(files_size = 1; files_size <= 1; files_size++) {
+    for(files_size = 1; files_size <= 6; files_size++) {
+        
         // file vector generation
-        GenFilevector(files_size * 10000 / divide_num, DICTIONARY_SIZE, file_vector_list);
-
+        GenFilevector(files_size * 100000 / divide_num, DICTIONARY_SIZE, file_vector_list);
+    
         for (int j = 0; j < CAL_REPEAT; j++) {
 
             gettimeofday(&time1,NULL);
 
             // build encrypted tag
             BuildEncTag(param, DICTIONARY_SIZE, enc_taglist);
-
+        
             // build path-ids
             BuildPathids(param, file_vector_list, pathids_size, pathids);
-
+            
             gettimeofday(&time2,NULL);
 
             evaluate_time += (time2.tv_sec-time1.tv_sec)+((double)(time2.tv_usec-time1.tv_usec))/1000000;
@@ -387,7 +415,7 @@ void OutsourceFileTest()
 //            for(int z = 0; z < pathids_size; z++)
 //                pathids[z].clear();
         }
-        printf("%f\n", divide_num * evaluate_time / CAL_REPEAT);
+        printf("evaluate_time: %f\n", divide_num * evaluate_time / CAL_REPEAT);
         evaluate_time = 0;
 
         vector<string>().swap(file_vector_list);
@@ -406,7 +434,7 @@ void QueryTest1()
     struct timeval time1,time2;
     Param param;
     element_t enc_taglist[DICTIONARY_SIZE][2];   // to store encrypted tag array
-    string pathids[pathids_size];                // to store encrypted path-ids array
+    unsigned char pathids[pathids_size][PATHIDS_MAXMUM_LEN];                // to store encrypted path-ids array
     vector<string> file_vector_list;             // to store all the file vector in file collection
     element_t enc_query_vector[DICTIONARY_SIZE]; // encrypted query vector
     vector<int> wildcard_offset;                 // to identify the locations of wildcard keywords in query vector
@@ -453,8 +481,6 @@ void QueryTest1()
         evaluate_time = 0;
 
         vector<string>().swap(file_vector_list);
-        for(int z = 0; z < pathids_size; z++)
-            pathids[z].clear();
     }
 }
 
@@ -469,7 +495,7 @@ void QueryTest2()
     struct timeval time1,time2;
     Param param;
     element_t enc_taglist[DICTIONARY_SIZE][2];   // to store encrypted tag array
-    string pathids[pathids_size];                // to store encrypted path-ids array
+    unsigned char pathids[pathids_size][PATHIDS_MAXMUM_LEN];               // to store encrypted path-ids array
     vector<string> file_vector_list;             // to store all the file vector in file collection
     element_t enc_query_vector[DICTIONARY_SIZE]; // encrypted query vector
     vector<int> wildcard_offset;                 // to identify the locations of wildcard keywords in query vector
@@ -513,8 +539,6 @@ void QueryTest2()
         evaluate_time = 0;
 
         vector<string>().swap(file_vector_list);
-        for(int z = 0; z < pathids_size; z++)
-            pathids[z].clear();
     }
 }
 
@@ -523,5 +547,8 @@ int main(int argc, char * argv[])
 {
     OutsourceFileTest();
 //    QueryTest2();
+    
     return 0;
 }
+
+
